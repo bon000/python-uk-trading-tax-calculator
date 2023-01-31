@@ -1,143 +1,140 @@
 """
     Python UK trading tax calculator
-
+    
     Copyright (C) 2015  Robert Carver
-
-    You may copy, modify and redistribute this file as allowed in the license agreement
+    
+    You may copy, modify and redistribute this file as allowed in the license agreement 
          but you must retain this header
-
-    See README.txt
+    
+    See README.md
 
 """
 
 import sys
 from trades import Trade, THRESHOLD
 from tradelist import TradeList
-from utils import tax_year, star_line, pretty
+from utils import determine_tax_year, star_line, pretty
 
 zero_tax_tuple = (0.0, 0.0, 0.0, 0.0, 0, 0.0, 0.0, 0.0, 0.0, 0.0)
 
 
 class TaxCalcTradeGroup(object):
     """
-    attributes: closingtrade, sameday, withinmonth, s104
-            closingtrade - contains single trade
+    attributes: closingtrade, sameday, withinmonth, s104 
+            closingtrade - contains single trade 
             sameday - TradeList of all matched trades done in the same day (if relevant)
             withinmonth - TradeList of all matched trades done in next 30 days (if relevant)
-            s104 - TradeList of all remaining matched trades
+            s104 - TradeList of all remaining matched trades 
     """
 
     def __init__(self, closingtrade):
-
-        '''
+        """
         We'd normally set up the group with a single closing trade
-        '''
+        """
 
         assert type(closingtrade) is Trade
         assert closingtrade.tradetype is "Close"
-
-        setattr(self, "closingtrade", closingtrade)
-        setattr(self, "sameday", TradeList())
-        setattr(self, "withinmonth", TradeList())
-        setattr(self, "s104", TradeList())
+        self.closing_trade = closingtrade
+        self.same_day = TradeList()
+        self.within_month = TradeList()
+        self.s104 = TradeList()
 
     def __repr__(self):
-
-        return "Match for %s of which unmatched %d" % (self.closingtrade.__repr__(), self.count_unmatched())
+        return "Match for %s of which unmatched %d" % (self.closing_trade.__repr__(), self.count_unmatched())
 
     def is_unmatched(self):
         return self.count_unmatched() != 0
 
     def count_unmatched(self):
-        ### Returns zero if all trades matched
-        ## Else returns quantity left to match
+        # Returns zero if all trades matched
+        # Else returns quantity left to match
 
-        sizetomatch = self.closingtrade.SignQuantity
+        num_trades_to_match = self.closing_trade.SignQuantity
 
-        ## matching trades should have opposite quantity
-        samedaymatch = self.sameday.final_position()
-        inmonthmatch = self.withinmonth.final_position()
+        # matching trades should have opposite quantity
+        same_day_match = self.same_day.final_position()
+        in_month_match = self.within_month.final_position()
         s104match = self.s104.final_position()
 
-        matched = samedaymatch + inmonthmatch + s104match
-        unmatched = -(sizetomatch + matched)
+        matched = same_day_match + in_month_match + s104match
+        unmatched = -(num_trades_to_match + matched)
 
-        ## eg matched = -5, sizetomatch = 6, unmatched = -1
-        ## eg matched = 5, sizetomatch = -6, unmatched = 1
+        # eg matched = -5, sizetomatch = 6, unmatched = -1
+        # eg matched = 5, sizetomatch = -6, unmatched = 1
 
         assert abs(matched) <= abs(matched)
 
         if abs(unmatched) < THRESHOLD:
-            ## Just in case pro-rata leaves rounding errors
+            # Just in case pro-rata leaves rounding errors
             return 0.0
 
         return unmatched
 
     def matches_as_tradelist(self):
         """
-        Returns a single tradelist with the various elements inside
+        Returns a single tradelist with the various elements inside 
         """
 
         tradelist = TradeList()
-        [tradelist.append(trade) for trade in self.sameday]
-        [tradelist.append(trade) for trade in self.withinmonth]
+        [tradelist.append(trade) for trade in self.same_day]
+        [tradelist.append(trade) for trade in self.within_month]
         [tradelist.append(trade) for trade in self.s104]
 
         return tradelist
 
-    def _in_tax_year(self, taxyear=None):
+    def _in_tax_year(self, tax_year=None):
 
-        if taxyear is None:
+        if tax_year is None:
             return True
 
-        (startofyear, endofyear) = tax_year(taxyear)
+        (start_of_year, end_of_year) = determine_tax_year(tax_year)
 
-        if self.closingtrade.Date < startofyear or self.closingtrade.Date > endofyear:
+        if self.closing_trade.Date < start_of_year or self.closing_trade.Date > end_of_year:
             return False
         else:
             return True
 
     def group_display_taxes(self, taxyear, CGTCalc, reportinglevel, groupid=0, report=None, display=True):
 
-        ## Prints, and returns a tuple for each disposal_proceeds, allowable_costs, year_gains, year_losses,
-        ##        number_disposals, commissions, taxes, gross profit
+        # Prints, and returns a tuple for each disposal_proceeds, allowable_costs, year_gains, year_losses,
+        #        number_disposals, commissions, taxes, gross profit
 
         if report is None:
             report = sys.stdout
 
         if not self._in_tax_year(taxyear):
-            ## print nothing, return zero tuples
+            # print nothing, return zero tuples
             return zero_tax_tuple
 
-        ## Put all the matching opening trades into one list
+        # Put all the matching opening trades into one list
         matchinglist = self.matches_as_tradelist()
 
-        ## Different treatment depending on type
-        ## Defaults to equities
-        assetclass = getattr(self.closingtrade, "AssetClass", "Equity")
-        closingfxrate = self.closingtrade.FXRate
+        # Different treatment depending on type
+        # Defaults to equities
+        assetclass = getattr(self.closing_trade, "AssetClass", "Equity")
+        closingfxrate = self.closing_trade.FXRate
 
-        ## Values, done on cashflow basis. -ve means buy, +ve means sell
-        close_value = self.closingtrade.Value
+        # Values, done on cashflow basis. -ve means buy, +ve means sell
+        close_value = self.closing_trade.Value
         open_value = sum([trade.Value for trade in matchinglist])
 
-        ## Taxes and commissions, always positive
-        close_tax = self.closingtrade.Tax
-        close_comm = self.closingtrade.Commission
+        # Taxes and commissions, always positive        
+        close_tax = self.closing_trade.Tax
+        close_comm = self.closing_trade.Commission
 
         open_tax = sum([trade.Tax for trade in matchinglist])
         open_comm = sum([trade.Commission for trade in matchinglist])
 
-        ## Fees, all positive
+        # Fees, all positive
         taxes = open_tax + close_tax
         commissions = open_comm + close_comm
 
-        ## Everything in GBP, using FX rate on day of each trade
-        close_value_gbp = self.closingtrade.Value * self.closingtrade.FXRate
+        # Everything in GBP, using FX rate on day of each trade
+        close_value_gbp = self.closing_trade.Value * self.closing_trade.FXRate
         open_value_gbp = sum([trade.Value * trade.FXRate for trade in matchinglist])
 
-        close_tax_gbp = self.closingtrade.Tax * self.closingtrade.FXRate
-        close_comm_gbp = self.closingtrade.Commission * self.closingtrade.FXRate
+        close_tax_gbp = self.closing_trade.Tax * self.closing_trade.FXRate
+        close_comm_gbp = self.closing_trade.Commission * self.closing_trade.FXRate
 
         open_tax_gbp = sum([trade.Tax * trade.FXRate for trade in matchinglist])
         open_comm_gbp = sum([trade.Commission * trade.FXRate for trade in matchinglist])
@@ -145,34 +142,32 @@ class TaxCalcTradeGroup(object):
         gbp_taxes = open_tax_gbp + close_tax_gbp
         gbp_commissions = open_comm_gbp + close_comm_gbp
 
-        ## Cost and proceeds
+        # Cost and proceeds
 
-        ### Calculation depends on type of asset
+        # Calculation depends on type of asset
 
         if assetclass == "Equity" or assetclass == "Stocks":
             if close_value > 0:
-                ## Normal, open with a buy, close with a sell
+                # Normal, open with a buy, close with a sell
                 allowable_costs = abs(open_value) + open_tax + open_comm
                 disposal_proceeds = abs(close_value) - close_tax - close_comm
 
                 gbp_allowable_costs = abs(open_value_gbp) + open_tax_gbp + open_comm_gbp
                 gbp_disposal_proceeds = abs(close_value_gbp) - close_tax_gbp - close_comm_gbp
 
-
             else:
-                ## Selling short
+                # Selling short
                 disposal_proceeds = abs(open_value) + open_tax + open_comm
                 allowable_costs = abs(close_value) - close_tax - close_comm
 
                 gbp_disposal_proceeds = abs(open_value_gbp) + open_tax_gbp + open_comm_gbp
                 gbp_allowable_costs = abs(close_value_gbp) - close_tax_gbp - close_comm_gbp
 
-
         elif assetclass == "Futures" or assetclass == "Forex":
-            ## Futures. Disposal proceeds is local profit converted at closing FX rate
-            ## Allowable costs includes only commissions, taxes
+            # Futures. Disposal proceeds is local profit converted at closing FX rate
+            # Allowable costs includes only commissions, taxes
 
-            ##Note values are in cashflowbasis. So to work out profits we add them
+            # Note values are in cashflowbasis. So to work out profits we add them
 
             allowable_costs = open_tax + open_comm
             disposal_proceeds = (open_value + close_value) - close_tax - close_comm
@@ -180,16 +175,15 @@ class TaxCalcTradeGroup(object):
             gbp_allowable_costs = open_tax_gbp + open_comm_gbp
             gbp_disposal_proceeds = (open_value + close_value) * closingfxrate - close_tax_gbp - close_comm_gbp
 
-
         else:
             raise Exception(
                 "Asset class %s not recognised, no idea what to do. Must be Equity, Futures or Forex." % assetclass)
 
-        ## Gross and net profits
+        # Gross and net profits
         net_profit = disposal_proceeds - allowable_costs
         gbp_net_profit = gbp_disposal_proceeds - gbp_allowable_costs
 
-        ## We add back the positive taxes and commissions to get gross figures
+        # We add back the positive taxes and commissions to get gross figures
         gross_profit = net_profit + taxes + commissions
         gbp_gross_profit = gbp_net_profit + gbp_taxes + gbp_commissions
 
@@ -202,11 +196,11 @@ class TaxCalcTradeGroup(object):
                                     allowable_costs,
                                     disposal_proceeds, commissions, taxes)
 
-        ## Only one disposal per group
+        # Only one disposal per group
         number_disposals = 1
 
-        ## Average commission
-        abs_quantity = abs(self.closingtrade.SignQuantity)
+        # Average commission
+        abs_quantity = abs(self.closing_trade.SignQuantity)
 
         return (gbp_disposal_proceeds, gbp_allowable_costs, gbp_gains, gbp_losses, number_disposals,
                 gbp_commissions, gbp_taxes, gbp_gross_profit, abs_quantity, gbp_net_profit)
@@ -215,22 +209,22 @@ class TaxCalcTradeGroup(object):
                            groupid, gbp_net_profit, open_comm, close_comm, open_tax, close_tax, allowable_costs,
                            disposal_proceeds, commissions, taxes):
 
-        code = self.closingtrade.Code
-        currency = self.closingtrade.Currency
+        code = self.closing_trade.Code
+        currency = self.closing_trade.Currency
 
-        assetclass = (getattr(self.closingtrade, "AssetClass", ""))
+        assetclass = (getattr(self.closing_trade, "AssetClass", ""))
 
-        datelabel = self.closingtrade.Date.strftime('%d/%m/%Y')
+        datelabel = self.closing_trade.Date.strftime('%d/%m/%Y')
 
-        ## quantity will be negative for a closing sale / opening buy
-        sign_quantity = self.closingtrade.SignQuantity
+        # quantity will be negative for a closing sale / opening buy
+        sign_quantity = self.closing_trade.SignQuantity
 
         abs_quantity = abs(sign_quantity)
 
         average_open_value = abs(open_value) / abs_quantity
         average_close_value = abs(close_value) / abs_quantity
 
-        ## Labelling
+        # Labelling
         if sign_quantity < 0:
             labels = ("BUY", "SELL")
             signs = ("-", "")
@@ -254,14 +248,14 @@ class TaxCalcTradeGroup(object):
             """
             Example of CGT output
             1. SELL: 40867 XYZ (Stock) on 17/12/2013 at EUR0.911 gives LOSS of XYZ 8,275.00 equals GBP 5,000
-
+            
             (or CLOSE SHORT:  . Matches with OPEN SHORT: )
-
+            
             Matches with: 
             BUY: SAME DAY TRADES.
             TRADES WITHIN 30 days 
             SECTION 104 HOLDING. 40867 shares of XYZ bought at average price of EUR1.11333
-
+            
             """
 
             if inreport.showbrieftrade():
@@ -272,10 +266,10 @@ class TaxCalcTradeGroup(object):
 
             if inreport.showextra():
                 report.write(" Commission %s %s and taxes %s %s on %s\n" % (
-                currency, pretty(close_comm), currency, pretty(close_tax), labels[1]))
+                    currency, pretty(close_comm), currency, pretty(close_tax), labels[1]))
 
             if inreport.listtrades():
-                report.write("Trade details:" + self.closingtrade.__repr__() + "\n")
+                report.write("Trade details:" + self.closing_trade.__repr__() + "\n")
 
             if inreport.showextra():
                 report.write("Total allowable cost %s %s   Total disposal proceeds %s %s\n" % \
@@ -283,16 +277,16 @@ class TaxCalcTradeGroup(object):
 
                 report.write("\nMatches with:\n")
 
-                ## Calculation strings, build up to show how we calculated our profit or loss
+                # Calculation strings, build up to show how we calculated our profit or loss
             calc_string = "%s(%d*%s) - %s - %s " % \
                           (signs[1], int(abs_quantity), pretty(average_close_value, commas=False), pretty(close_comm),
                            pretty(close_tax))
 
-            if len(self.sameday) > 0:
-                sameday_quantity = int(round(abs(self.sameday.final_position())))
-                sameday_avg_value = self.sameday.average_value()
-                sameday_tax = sum([trade.Tax for trade in self.sameday])
-                sameday_comm = sum([trade.Commission for trade in self.sameday])
+            if len(self.same_day) > 0:
+                sameday_quantity = int(round(abs(self.same_day.final_position())))
+                sameday_avg_value = self.same_day.average_value()
+                sameday_tax = sum([trade.Tax for trade in self.same_day])
+                sameday_comm = sum([trade.Commission for trade in self.same_day])
 
                 sameday_calc_string = "%s(%d*%s) - %s - %s " % \
                                       (signs[0], sameday_quantity, pretty(sameday_avg_value, commas=False),
@@ -308,16 +302,16 @@ class TaxCalcTradeGroup(object):
 
                 if inreport.listtrades():
                     report.write("\nTrades:\n")
-                    self.sameday.print_trades_and_parents(report)
+                    self.same_day.print_trades_and_parents(report)
 
-            if len(self.withinmonth) > 0:
-                withinmonth_quantity = int(abs(round((self.withinmonth.final_position()))))
-                withinmonth_avg_value = self.withinmonth.average_value()
-                withinmonth_tax = sum([trade.Tax for trade in self.withinmonth])
-                withinmonth_comm = sum([trade.Commission for trade in self.withinmonth])
+            if len(self.within_month) > 0:
+                withinmonth_quantity = int(abs(round((self.within_month.final_position()))))
+                withinmonth_avg_value = self.within_month.average_value()
+                withinmonth_tax = sum([trade.Tax for trade in self.within_month])
+                withinmonth_comm = sum([trade.Commission for trade in self.within_month])
 
-                tradecount = len(self.withinmonth)
-                (startdate, enddate) = self.withinmonth.range_of_dates()
+                tradecount = len(self.within_month)
+                (startdate, enddate) = self.within_month.range_of_dates()
 
                 withinmonth_calc_string = "%s(%d*%s) - %s - %s " % \
                                           (signs[0], withinmonth_quantity, pretty(withinmonth_avg_value, commas=False),
@@ -334,7 +328,7 @@ class TaxCalcTradeGroup(object):
 
                 if inreport.listtrades():
                     report.write("\nTrades:\n")
-                    self.withinmonth.print_trades_and_parents(report)
+                    self.within_month.print_trades_and_parents(report)
 
             if len(self.s104) > 0:
                 s104_quantity = int(round(abs(self.s104.final_position())))
@@ -364,13 +358,13 @@ class TaxCalcTradeGroup(object):
                     self.s104.print_trades_and_parents(report)
 
             if inreport.showcalcs():
-                ## Show full calculations
+                # Show full calculations
                 report.write("\nCALCULATION: " + calc_string + " = %s \n" % pretty(round(net_profit)))
 
         else:
             """
             Example of non CGT output
-
+            
             SELL 40867 RSA (Stock) on 17/12/2013 at EUR0.911 gives net LOSS of EUR 8,275 equals GBP5,000.0
             AVERAGE price EUR .  Total commission: EUR   Total tax:  EUR 
             """
@@ -381,13 +375,13 @@ class TaxCalcTradeGroup(object):
                               pandl, currency, pretty(round(net_profit)), pretty(gbp_net_profit)))
 
             if inreport.listtrades():
-                report.write("Trade details:" + self.closingtrade.__repr__() + "\n")
+                report.write("Trade details:" + self.closing_trade.__repr__() + "\n")
 
             tradecount = len(self.s104)
             (startdate, enddate) = self.s104.range_of_dates()
             parent_quantity = self.s104.total_including_parents()
 
-            ## Calculation strings, build up to show how we calculated our profit or loss
+            # Calculation strings, build up to show how we calculated our profit or loss
             calc_string = "%s(%d*%s) - %s - %s " % \
                           (signs[1], int(abs_quantity), pretty(average_close_value, commas=False), pretty(close_comm),
                            pretty(close_tax))
@@ -405,12 +399,12 @@ class TaxCalcTradeGroup(object):
                      pretty(commissions), currency, pretty(taxes)))
 
             if inreport.listtrades():
-                ## Trade by trade breakdown
+                # Trade by trade breakdown
                 report.write("\nTrades:\n")
                 self.s104.print_trades_and_parents(report)
 
             if inreport.showcalcs():
-                ## calculations
+                # calculations
                 report.write("\nCALCULATION: " + calc_string + " = %s \n" % pretty(round(net_profit)))
 
         if inreport.extraline():
@@ -420,19 +414,19 @@ class TaxCalcTradeGroup(object):
 class reporting_detail(object):
     def __init__(self, reportinglevel):
         assert reportinglevel in ["VERBOSE", "CALCULATE", "NORMAL", "BRIEF", "ANNUAL"]
-        setattr(self, "reportinglevel", reportinglevel)
+        self.__reporting_level = reportinglevel
 
     def extraline(self):
-        return self.reportinglevel in ["VERBOSE", "CALCULATE", "NORMAL"]
+        return self.__reporting_level in ["VERBOSE", "CALCULATE", "NORMAL"]
 
     def showbrieftrade(self):
-        return self.reportinglevel in ["VERBOSE", "CALCULATE", "NORMAL", "BRIEF"]
+        return self.__reporting_level in ["VERBOSE", "CALCULATE", "NORMAL", "BRIEF"]
 
     def showextra(self):
-        return self.reportinglevel in ["VERBOSE", "CALCULATE", "NORMAL"]
+        return self.__reporting_level in ["VERBOSE", "CALCULATE", "NORMAL"]
 
     def listtrades(self):
-        return self.reportinglevel in ["VERBOSE"]
+        return self.__reporting_level in ["VERBOSE"]
 
     def showcalcs(self):
-        return self.reportinglevel in ["VERBOSE", "CALCULATE"]
+        return self.__reporting_level in ["VERBOSE", "CALCULATE"]

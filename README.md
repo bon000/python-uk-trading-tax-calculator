@@ -1,5 +1,9 @@
+Use at your own risk, it will probably not work for you.
 
 
+Original README
+
+```
     Python UK trading tax calculator
     
     Copyright (C) 2015  Robert Carver
@@ -37,3 +41,5 @@
 """
     
 2) For instructions see .
+```
+
