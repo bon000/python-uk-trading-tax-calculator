@@ -41,8 +41,8 @@ def parse_trades_from_file(trades_file):
     # THE FOLLOWING ARGUMENTS SEEM TO WORK BEST WITH THE MOST RECENT OUTPUT
     # SOMETIMES TABLE_REF WILL NEED TO BE 7 DEPENDING ON WHAT OTHER ASSETS ARE IN YOUR
     #  ACCOUNT
-    trades3 = get_ib_trades(trades_file, table_ref=8,
-                            colref="Account", pricerow="T. Price", commrow="Comm in GBP")
+    trades3 = get_ib_trades(trades_file, table_ref=7,
+                            colref="Account", pricerow="T. Price", commrow="Comm/Fee")
 
     # HERES A SLIGHTLY OLDER FILE
     # trades2 = get_ib_trades(mydir + "U1228709.2020.html", table_ref=8,
@@ -79,11 +79,11 @@ CGTCalc = True
 REPORT_FILE = "TaxReport.txt"
 REPORTING_LEVEL = "VERBOSE"
 FX_SOURCE = "YFINANCE"
-FX_FROM_DATE = "2021-01-30"
-FX_TO_DATE = "2023-01-30"
+FX_FROM_DATE = "2022-01-30"
+FX_TO_DATE = "2023-06-30"
 
 # OBVIOUSLY YOU WILL NEED TO CHANGE THIS
-TRADES_FILE = "YOUR_DIR_HERE"
+TRADES_FILE = "MULTI_20220404_20230404_2.htm"
 
 # Get trades and positions
 ALL_TRADES = parse_trades_from_file(TRADES_FILE)
@@ -98,7 +98,7 @@ taxcalc_dict = calculate_tax(ALL_TRADES, CGTCalc=CGTCalc, reportfile=REPORT_FILE
 # You can also run this interactively
 # CGTCalc needs to match, or it wont' make sense
 
-taxcalc_dict.display_taxes(taxyear=2022, CGTCalc=CGTCalc, reportinglevel="BRIEF")
+taxcalc_dict.display_taxes(taxyear=2023, CGTCalc=CGTCalc, reportinglevel="BRIEF")
 
 # Display all the trades for one code ('element')
 # taxcalc_dict['IAPl'].display_taxes_for_code(taxyear=2017, CGTCalc=CGTCalc, reportinglevel="CALCULATE")
